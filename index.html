@@ -4,54 +4,54 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>手机批量加水印</title>
-  <meta name="description" content="适配手机浏览器的批量图片加水印工具，支持文字水印、透明 logo、预览、批量下载。">
+  <meta name="description" content="适配手机浏览器的批量图片加水印工具，支持文字水印、Logo 水印、预览和手机导出。">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <div class="shell">
     <header class="hero">
-      <p class="eyebrow">Cloudflare Pages Ready</p>
+      <p class="eyebrow">Mobile First</p>
       <h1>手机批量加水印</h1>
-      <p class="lead">先选图，再调水印，最后导出。页面按手机单手操作重新收紧了，不让大预览先把屏幕占满。</p>
-      <nav class="quick-nav">
-        <a href="#imagesSection">选图</a>
-        <a href="#settingsSection">设置</a>
-        <a href="#exportSection">导出</a>
-      </nav>
+      <p class="lead">选图、加字、预览、导出。手机上先保证结果明确能拿到，再考虑后续转发和存相册。</p>
     </header>
 
     <main class="layout">
-      <section id="imagesSection" class="panel panel-accent">
+      <section class="panel panel-accent">
         <div class="section-head">
-          <h2>1. 选择图片</h2>
+          <h2>选择图片</h2>
           <span id="imageCount" class="badge">0 张</span>
         </div>
         <label class="upload-card">
           <input id="imagesInput" type="file" accept="image/*" multiple>
-          <span class="upload-title">点这里选择多张图片</span>
-          <span class="upload-subtitle">手机相册可直接多选。下面横向滑动切换当前预览图。</span>
+          <span class="upload-title">选择多张图片</span>
+          <span class="upload-subtitle">选完后横向切换缩略图。点缩略图右上角的 × 可删除。</span>
         </label>
         <div id="thumbStrip" class="thumb-strip empty"></div>
       </section>
 
-      <section id="settingsSection" class="panel">
+      <section class="panel">
         <div class="section-head">
-          <h2>2. 水印设置</h2>
+          <h2>水印设置</h2>
           <button id="resetBtn" class="ghost-btn" type="button">恢复默认</button>
-        </div>
-
-        <div class="field">
-          <label>水印模板预设</label>
-          <div class="preset-row">
-            <button class="preset-btn" type="button" data-preset="light">默认淡白</button>
-            <button class="preset-btn" type="button" data-preset="brand">品牌宣传</button>
-            <button class="preset-btn" type="button" data-preset="bold">强提示</button>
-          </div>
         </div>
 
         <div class="field">
           <label for="watermarkText">水印文字</label>
           <input id="watermarkText" type="text" value="© Watermark" placeholder="输入要叠加的文字">
+        </div>
+
+        <div class="field">
+          <label>文字颜色</label>
+          <div id="textColorPicker" class="color-row">
+            <button class="color-chip active" type="button" data-color="#ffffff" aria-label="白色"></button>
+            <button class="color-chip" type="button" data-color="#111111" aria-label="黑色"></button>
+            <button class="color-chip" type="button" data-color="#d7263d" aria-label="红色"></button>
+            <button class="color-chip" type="button" data-color="#f4b400" aria-label="黄色"></button>
+            <button class="color-chip" type="button" data-color="#2563eb" aria-label="蓝色"></button>
+            <button class="color-chip" type="button" data-color="#16a34a" aria-label="绿色"></button>
+            <button class="color-chip" type="button" data-color="#6b7280" aria-label="灰色"></button>
+            <button class="color-chip" type="button" data-color="#ea580c" aria-label="橙色"></button>
+          </div>
         </div>
 
         <div class="grid two">
@@ -62,17 +62,6 @@
           <div class="field">
             <label for="fontScaleRange">文字大小 <span id="fontScaleValue">1.0x</span></label>
             <input id="fontScaleRange" type="range" min="0.5" max="2" step="0.1" value="1">
-          </div>
-        </div>
-
-        <div class="grid two">
-          <div class="field">
-            <label for="offsetX">X 偏移</label>
-            <input id="offsetX" type="number" min="-1000" max="1000" value="0">
-          </div>
-          <div class="field">
-            <label for="offsetY">Y 偏移</label>
-            <input id="offsetY" type="number" min="-1000" max="1000" value="0">
           </div>
         </div>
 
@@ -94,32 +83,17 @@
             <input id="logoScaleRange" type="range" min="0.3" max="2" step="0.1" value="1">
           </div>
         </div>
-
-        <div class="field">
-          <label for="namingMode">批量命名规则</label>
-          <select id="namingMode">
-            <option value="suffix">原文件名 + _watermarked</option>
-            <option value="prefix">自定义前缀 + 原文件名</option>
-            <option value="sequence">批量序号命名</option>
-            <option value="timestamp">时间戳命名</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="namePrefix">命名前缀 / 序号前缀</label>
-          <input id="namePrefix" type="text" value="wm" placeholder="例如：brand、门店名、wm">
-        </div>
       </section>
 
-      <section id="exportSection" class="panel preview-panel">
+      <section class="panel">
         <div class="section-head">
-          <h2>3. 预览与导出</h2>
+          <h2>预览</h2>
           <span id="statusPill" class="badge badge-soft">等待图片</span>
         </div>
 
         <div class="preview-meta">
           <div>
-            <p class="preview-kicker">当前预览</p>
+            <p class="preview-kicker">当前图片</p>
             <p id="currentFileName" class="current-file">还没选择图片</p>
           </div>
           <button id="togglePreviewBtn" class="ghost-btn compact-btn" type="button">展开预览</button>
@@ -127,7 +101,7 @@
 
         <div id="previewStage" class="preview-stage compact">
           <canvas id="previewCanvas"></canvas>
-          <div id="previewEmpty" class="preview-empty">选择图片后，这里会显示第一张图的预览效果。</div>
+          <div id="previewEmpty" class="preview-empty">选择图片后，这里会显示效果。</div>
         </div>
 
         <div class="progress-block">
@@ -140,7 +114,7 @@
           </div>
         </div>
 
-        <p class="compat-note">兼容处理已补强：对部分 iPhone 浏览器增加图片解码和导出降级逻辑，失败时会优先走更稳妥的本地转换。</p>
+        <p id="saveHint" class="compat-note">单张下载会直接生成明确图片文件。批量导出会生成结果面板，方便逐张保存或分享。</p>
       </section>
     </main>
   </div>
@@ -148,7 +122,29 @@
   <div class="bottom-bar">
     <button id="previewBtn" class="secondary-btn" type="button">刷新预览</button>
     <button id="downloadCurrentBtn" class="secondary-btn" type="button">下载当前</button>
-    <button id="downloadAllBtn" class="primary-btn" type="button">批量 ZIP</button>
+    <button id="downloadAllBtn" class="primary-btn" type="button">批量导出全部</button>
+  </div>
+
+  <div class="site-credit">制作者：陆上行舟　联系邮箱：1455234504@qq.com</div>
+
+  <div id="resultsSheet" class="sheet hidden">
+    <div id="sheetBackdrop" class="sheet-backdrop"></div>
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <div>
+          <p class="sheet-kicker">批量结果</p>
+          <h3 id="sheetTitle">已生成 0 张图片</h3>
+        </div>
+        <button id="closeSheetBtn" class="ghost-btn compact-btn" type="button">关闭</button>
+      </div>
+
+      <div class="sheet-actions">
+        <button id="downloadSheetAllBtn" class="secondary-btn" type="button">全部下载</button>
+        <button id="shareSheetAllBtn" class="primary-btn" type="button">全部分享</button>
+      </div>
+
+      <div id="resultsList" class="results-list"></div>
+    </div>
   </div>
 
   <script src="./app.js"></script>

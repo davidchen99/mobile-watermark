@@ -5,14 +5,9 @@ const state = {
   imageFiles: [],
   selectedIndex: 0,
   logoBitmap: null,
-  logoName: "",
   working: false,
-};
-
-const presets = {
-  light: { text: "© Watermark", opacity: 110, fontScale: 1, offsetX: 0, offsetY: 0, logoOpacity: 200, logoScale: 1 },
-  brand: { text: "品牌出品", opacity: 145, fontScale: 1.2, offsetX: -8, offsetY: -8, logoOpacity: 220, logoScale: 1.1 },
-  bold: { text: "请勿盗图", opacity: 180, fontScale: 1.5, offsetX: -16, offsetY: -12, logoOpacity: 235, logoScale: 1.25 },
+  batchResults: [],
+  textColor: "#ffffff",
 };
 
 const el = {
@@ -20,15 +15,12 @@ const el = {
   watermarkText: document.querySelector("#watermarkText"),
   opacityRange: document.querySelector("#opacityRange"),
   fontScaleRange: document.querySelector("#fontScaleRange"),
-  offsetX: document.querySelector("#offsetX"),
-  offsetY: document.querySelector("#offsetY"),
+  textColorPicker: document.querySelector("#textColorPicker"),
+  colorChips: Array.from(document.querySelectorAll(".color-chip")),
   logoInput: document.querySelector("#logoInput"),
   logoName: document.querySelector("#logoName"),
   logoOpacityRange: document.querySelector("#logoOpacityRange"),
   logoScaleRange: document.querySelector("#logoScaleRange"),
-  namingMode: document.querySelector("#namingMode"),
-  namePrefix: document.querySelector("#namePrefix"),
-  presetButtons: Array.from(document.querySelectorAll(".preset-btn")),
   previewCanvas: document.querySelector("#previewCanvas"),
   previewStage: document.querySelector("#previewStage"),
   previewEmpty: document.querySelector("#previewEmpty"),
@@ -39,6 +31,7 @@ const el = {
   progressText: document.querySelector("#progressText"),
   progressPercent: document.querySelector("#progressPercent"),
   progressBar: document.querySelector("#progressBar"),
+  saveHint: document.querySelector("#saveHint"),
   previewBtn: document.querySelector("#previewBtn"),
   togglePreviewBtn: document.querySelector("#togglePreviewBtn"),
   downloadCurrentBtn: document.querySelector("#downloadCurrentBtn"),
@@ -48,6 +41,13 @@ const el = {
   fontScaleValue: document.querySelector("#fontScaleValue"),
   logoOpacityValue: document.querySelector("#logoOpacityValue"),
   logoScaleValue: document.querySelector("#logoScaleValue"),
+  resultsSheet: document.querySelector("#resultsSheet"),
+  sheetBackdrop: document.querySelector("#sheetBackdrop"),
+  closeSheetBtn: document.querySelector("#closeSheetBtn"),
+  sheetTitle: document.querySelector("#sheetTitle"),
+  resultsList: document.querySelector("#resultsList"),
+  downloadSheetAllBtn: document.querySelector("#downloadSheetAllBtn"),
+  shareSheetAllBtn: document.querySelector("#shareSheetAllBtn"),
 };
 
 const previewCtx = el.previewCanvas.getContext("2d", { alpha: false });
@@ -55,10 +55,9 @@ const previewCtx = el.previewCanvas.getContext("2d", { alpha: false });
 function getSettings() {
   return {
     text: el.watermarkText.value.trim() || "© Watermark",
+    textColor: state.textColor,
     opacity: clampNumber(Number(el.opacityRange.value), 20, 255, 110),
     fontScale: clampNumber(Number(el.fontScaleRange.value), 0.5, 2, 1),
-    offsetX: clampNumber(Number(el.offsetX.value), -1000, 1000, 0),
-    offsetY: clampNumber(Number(el.offsetY.value), -1000, 1000, 0),
     logoOpacity: clampNumber(Number(el.logoOpacityRange.value), 30, 255, 200),
     logoScale: clampNumber(Number(el.logoScaleRange.value), 0.3, 2, 1),
   };
@@ -76,15 +75,43 @@ function updateValueLabels() {
   el.logoScaleValue.textContent = `${Number(el.logoScaleRange.value).toFixed(1)}x`;
 }
 
+function setProgress(done, total, label) {
+  const percent = total ? Math.round((done / total) * 100) : 0;
+  el.progressText.textContent = label;
+  el.progressPercent.textContent = `${percent}%`;
+  el.progressBar.style.width = `${percent}%`;
+}
+
+function setStatus(text) {
+  el.statusPill.textContent = text;
+}
+
+function resetControls() {
+  el.watermarkText.value = "© Watermark";
+  el.opacityRange.value = "110";
+  el.fontScaleRange.value = "1";
+  el.logoOpacityRange.value = "200";
+  el.logoScaleRange.value = "1";
+  setTextColor("#ffffff");
+  updateValueLabels();
+  queuePreview();
+}
+
+function queuePreview() {
+  window.requestAnimationFrame(() => {
+    void renderSelectedPreview();
+  });
+}
+
 async function fileToBitmap(file) {
   if ("createImageBitmap" in window) {
     try {
       return await createImageBitmap(file, { imageOrientation: "from-image" });
-    } catch (error) {
+    } catch {
       try {
         return await createImageBitmap(file);
       } catch {
-        console.warn("createImageBitmap failed, fallback to HTMLImageElement", error);
+        // fall through
       }
     }
   }
@@ -105,56 +132,23 @@ async function fileToBitmap(file) {
   });
 }
 
-function sanitizeBaseName(value) {
-  return value.replace(/[\\/:*?"<>|]/g, "_").trim() || "watermarked";
+function safeBaseName(fileName) {
+  const dotIndex = fileName.lastIndexOf(".");
+  const base = dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
+  return (base || "watermarked").replace(/[\\/:*?"<>|]/g, "_");
 }
 
 function formatOutputName(file, index) {
-  const dotIndex = file.name.lastIndexOf(".");
-  const base = sanitizeBaseName(dotIndex >= 0 ? file.name.slice(0, dotIndex) : file.name);
-  const mode = el.namingMode.value;
-  const prefix = sanitizeBaseName(el.namePrefix.value || "wm");
-  if (mode === "prefix") return `${prefix}_${base}.jpg`;
-  if (mode === "sequence") return `${prefix}_${String(index + 1).padStart(3, "0")}.jpg`;
-  if (mode === "timestamp") return `${prefix}_${makeTimestamp()}_${String(index + 1).padStart(3, "0")}.jpg`;
-  return `${base}_watermarked.jpg`;
+  return `${safeBaseName(file.name)}_${String(index + 1).padStart(3, "0")}.jpg`;
 }
 
-function setProgress(done, total, label) {
-  const percent = total ? Math.round((done / total) * 100) : 0;
-  el.progressText.textContent = label;
-  el.progressPercent.textContent = `${percent}%`;
-  el.progressBar.style.width = `${percent}%`;
+function makeObjectUrl(blob) {
+  return URL.createObjectURL(blob);
 }
 
-function setStatus(text) {
-  el.statusPill.textContent = text;
-}
-
-function applyPreset(name) {
-  const preset = presets[name];
-  if (!preset) return;
-  el.watermarkText.value = preset.text;
-  el.opacityRange.value = String(preset.opacity);
-  el.fontScaleRange.value = String(preset.fontScale);
-  el.offsetX.value = String(preset.offsetX);
-  el.offsetY.value = String(preset.offsetY);
-  el.logoOpacityRange.value = String(preset.logoOpacity);
-  el.logoScaleRange.value = String(preset.logoScale);
-  updateValueLabels();
-}
-
-function resetControls() {
-  applyPreset("light");
-  el.namingMode.value = "suffix";
-  el.namePrefix.value = "wm";
-  updateValueLabels();
-  queuePreview();
-}
-
-function queuePreview() {
-  window.requestAnimationFrame(() => {
-    void renderSelectedPreview();
+function revokeBatchUrls() {
+  state.batchResults.forEach((item) => {
+    if (item.url) URL.revokeObjectURL(item.url);
   });
 }
 
@@ -173,17 +167,51 @@ function renderThumbnails() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `thumb${index === state.selectedIndex ? " active" : ""}`;
+
     const img = document.createElement("img");
     img.alt = file.name;
     img.src = URL.createObjectURL(file);
     img.addEventListener("load", () => URL.revokeObjectURL(img.src), { once: true });
+
+    const remove = document.createElement("span");
+    remove.className = "thumb-remove";
+    remove.textContent = "×";
+
     button.appendChild(img);
-    button.addEventListener("click", () => {
+    button.appendChild(remove);
+    button.addEventListener("click", (event) => {
+      const rect = button.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      if (x >= rect.width - 34 && x <= rect.width && y >= 0 && y <= 34) {
+        removeImage(index);
+        return;
+      }
       state.selectedIndex = index;
       renderThumbnails();
       queuePreview();
     });
+
     el.thumbStrip.appendChild(button);
+  });
+}
+
+function removeImage(index) {
+  state.imageFiles.splice(index, 1);
+  if (!state.imageFiles.length) {
+    state.selectedIndex = 0;
+  } else if (state.selectedIndex >= state.imageFiles.length) {
+    state.selectedIndex = state.imageFiles.length - 1;
+  }
+  renderThumbnails();
+  queuePreview();
+  setStatus(state.imageFiles.length ? "图片已更新" : "等待图片");
+}
+
+function setTextColor(color) {
+  state.textColor = color;
+  el.colorChips.forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.color === color);
   });
 }
 
@@ -204,12 +232,13 @@ async function drawWatermark(bitmap, canvas, settings) {
   const textMetrics = ctx.measureText(settings.text);
   const textWidth = textMetrics.width;
   const textHeight = Math.max(fontSize, (textMetrics.actualBoundingBoxAscent || fontSize) + (textMetrics.actualBoundingBoxDescent || 0));
-  const x = Math.max(MARGIN, width - textWidth - MARGIN + settings.offsetX);
-  const y = Math.max(MARGIN, height - textHeight - MARGIN + settings.offsetY);
+  const x = Math.max(MARGIN, width - textWidth - MARGIN);
+  const y = Math.max(MARGIN, height - textHeight - MARGIN);
 
   ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(255, settings.opacity + 70) / 255})`;
   ctx.fillText(settings.text, x + 2, y + 2);
-  ctx.fillStyle = `rgba(255, 255, 255, ${settings.opacity / 255})`;
+  const { r, g, b } = hexToRgb(settings.textColor);
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${settings.opacity / 255})`;
   ctx.fillText(settings.text, x, y);
 
   if (state.logoBitmap) {
@@ -282,14 +311,105 @@ async function exportBlob(file) {
 }
 
 function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
+  const url = makeObjectUrl(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function hexToRgb(hex) {
+  const normalized = hex.replace("#", "");
+  const value = normalized.length === 3
+    ? normalized.split("").map((ch) => ch + ch).join("")
+    : normalized;
+  const int = parseInt(value, 16);
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255,
+  };
+}
+
+async function shareFiles(items) {
+  if (!navigator.share || !navigator.canShare) return false;
+  try {
+    const files = items.map((item) => new File([item.blob], item.name, { type: "image/jpeg" }));
+    if (!navigator.canShare({ files })) return false;
+    await navigator.share({
+      files,
+      title: files.length === 1 ? "图片已生成" : "批量图片已生成",
+      text: "请选择保存、发送到微信，或继续分享。",
+    });
+    return true;
+  } catch (error) {
+    if (error && error.name === "AbortError") return true;
+    return false;
+  }
+}
+
+function openSheet() {
+  el.resultsSheet.classList.remove("hidden");
+}
+
+function closeSheet() {
+  el.resultsSheet.classList.add("hidden");
+}
+
+function renderResultsSheet() {
+  el.sheetTitle.textContent = `已生成 ${state.batchResults.length} 张图片`;
+  el.resultsList.innerHTML = "";
+
+  state.batchResults.forEach((item, index) => {
+    const card = document.createElement("div");
+    card.className = "result-card";
+
+    const thumb = document.createElement("div");
+    thumb.className = "result-thumb";
+    const img = document.createElement("img");
+    img.src = item.url;
+    img.alt = item.name;
+    thumb.appendChild(img);
+
+    const body = document.createElement("div");
+    body.className = "result-body";
+
+    const name = document.createElement("p");
+    name.className = "result-name";
+    name.textContent = item.name;
+
+    const status = document.createElement("p");
+    status.className = "result-status";
+    status.textContent = "可下载，可分享，可转微信。";
+
+    const actions = document.createElement("div");
+    actions.className = "result-actions";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "secondary-btn";
+    saveBtn.type = "button";
+    saveBtn.textContent = "下载";
+    saveBtn.addEventListener("click", () => {
+      downloadBlob(item.blob, item.name);
+    });
+
+    const shareBtn = document.createElement("button");
+    shareBtn.className = "primary-btn";
+    shareBtn.type = "button";
+    shareBtn.textContent = "分享";
+    shareBtn.addEventListener("click", async () => {
+      const ok = await shareFiles([item]);
+      if (!ok) downloadBlob(item.blob, item.name);
+    });
+
+    actions.append(saveBtn, shareBtn);
+    body.append(name, status, actions);
+    card.append(thumb, body);
+    el.resultsList.appendChild(card);
+  });
 }
 
 async function downloadCurrent() {
@@ -300,9 +420,11 @@ async function downloadCurrent() {
     setStatus("导出当前图片");
     setProgress(0, 1, "正在生成当前图片");
     const blob = await exportBlob(file);
-    downloadBlob(blob, formatOutputName(file, state.selectedIndex));
-    setProgress(1, 1, "当前图片已下载");
-    setStatus("当前图片已下载");
+    const name = formatOutputName(file, state.selectedIndex);
+    downloadBlob(blob, name);
+    setProgress(1, 1, "当前图片已生成");
+    setStatus("当前图片已生成");
+    el.saveHint.textContent = "图片文件已生成。你可以从系统下载中查看，或继续转发到微信 / 文件。";
   } catch (error) {
     console.error(error);
     setStatus("导出失败");
@@ -313,131 +435,29 @@ async function downloadCurrent() {
   }
 }
 
-function makeTimestamp() {
-  const now = new Date();
-  const pad = (value) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-}
-
-const crcTable = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n += 1) {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(bytes) {
-  let crc = 0xffffffff;
-  for (let i = 0; i < bytes.length; i += 1) crc = crcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function toDosDate(date) {
-  const year = Math.max(1980, date.getFullYear());
-  return ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
-}
-
-function toDosTime(date) {
-  return (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
-}
-
-function writeU16(view, offset, value) {
-  view.setUint16(offset, value, true);
-}
-
-function writeU32(view, offset, value) {
-  view.setUint32(offset, value >>> 0, true);
-}
-
-async function createZip(entries) {
-  const encoder = new TextEncoder();
-  const date = new Date();
-  const dosDate = toDosDate(date);
-  const dosTime = toDosTime(date);
-  const localChunks = [];
-  const centralChunks = [];
-  let offset = 0;
-
-  for (const entry of entries) {
-    const nameBytes = encoder.encode(entry.name);
-    const data = new Uint8Array(await entry.blob.arrayBuffer());
-    const crc = crc32(data);
-
-    const localHeader = new ArrayBuffer(30 + nameBytes.length);
-    const localView = new DataView(localHeader);
-    writeU32(localView, 0, 0x04034b50);
-    writeU16(localView, 4, 20);
-    writeU16(localView, 6, 0);
-    writeU16(localView, 8, 0);
-    writeU16(localView, 10, dosTime);
-    writeU16(localView, 12, dosDate);
-    writeU32(localView, 14, crc);
-    writeU32(localView, 18, data.length);
-    writeU32(localView, 22, data.length);
-    writeU16(localView, 26, nameBytes.length);
-    writeU16(localView, 28, 0);
-    new Uint8Array(localHeader, 30).set(nameBytes);
-    localChunks.push(new Uint8Array(localHeader), data);
-
-    const centralHeader = new ArrayBuffer(46 + nameBytes.length);
-    const centralView = new DataView(centralHeader);
-    writeU32(centralView, 0, 0x02014b50);
-    writeU16(centralView, 4, 20);
-    writeU16(centralView, 6, 20);
-    writeU16(centralView, 8, 0);
-    writeU16(centralView, 10, 0);
-    writeU16(centralView, 12, dosTime);
-    writeU16(centralView, 14, dosDate);
-    writeU32(centralView, 16, crc);
-    writeU32(centralView, 20, data.length);
-    writeU32(centralView, 24, data.length);
-    writeU16(centralView, 28, nameBytes.length);
-    writeU16(centralView, 30, 0);
-    writeU16(centralView, 32, 0);
-    writeU16(centralView, 34, 0);
-    writeU16(centralView, 36, 0);
-    writeU32(centralView, 38, 0);
-    writeU32(centralView, 42, offset);
-    new Uint8Array(centralHeader, 46).set(nameBytes);
-    centralChunks.push(new Uint8Array(centralHeader));
-    offset += localHeader.byteLength + data.length;
-  }
-
-  const centralSize = centralChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-  const endRecord = new ArrayBuffer(22);
-  const endView = new DataView(endRecord);
-  writeU32(endView, 0, 0x06054b50);
-  writeU16(endView, 4, 0);
-  writeU16(endView, 6, 0);
-  writeU16(endView, 8, entries.length);
-  writeU16(endView, 10, entries.length);
-  writeU32(endView, 12, centralSize);
-  writeU32(endView, 16, offset);
-  writeU16(endView, 20, 0);
-  return new Blob([...localChunks, ...centralChunks, new Uint8Array(endRecord)], { type: "application/zip" });
-}
-
-async function downloadAllZip() {
+async function generateBatchResults() {
   if (!state.imageFiles.length || state.working) return;
   state.working = true;
   try {
+    revokeBatchUrls();
+    state.batchResults = [];
     setStatus("批量处理中");
-    const entries = [];
     const total = state.imageFiles.length;
     for (let i = 0; i < total; i += 1) {
       const file = state.imageFiles[i];
       setProgress(i, total, `正在处理 ${i + 1}/${total}: ${file.name}`);
       const blob = await exportBlob(file);
-      entries.push({ name: formatOutputName(file, i), blob });
+      state.batchResults.push({
+        name: formatOutputName(file, i),
+        blob,
+        url: makeObjectUrl(blob),
+      });
     }
-    setProgress(total, total, "正在打包 ZIP");
-    const zipBlob = await createZip(entries);
-    downloadBlob(zipBlob, `watermark_batch_${makeTimestamp()}.zip`);
-    setStatus("ZIP 已下载");
-    setProgress(total, total, "全部完成");
+    setProgress(total, total, "全部处理完成");
+    setStatus("批量结果已生成");
+    renderResultsSheet();
+    openSheet();
+    el.saveHint.textContent = "批量结果已生成。建议在结果面板里逐张下载或分享，路径更明确。";
   } catch (error) {
     console.error(error);
     setStatus("批量导出失败");
@@ -446,6 +466,19 @@ async function downloadAllZip() {
   } finally {
     state.working = false;
   }
+}
+
+function downloadAllBatchFiles() {
+  if (!state.batchResults.length) return;
+  state.batchResults.forEach((item, index) => {
+    setTimeout(() => downloadBlob(item.blob, item.name), index * 180);
+  });
+}
+
+async function shareAllBatchFiles() {
+  if (!state.batchResults.length) return;
+  const ok = await shareFiles(state.batchResults);
+  if (!ok) downloadAllBatchFiles();
 }
 
 async function handleImagesSelected(event) {
@@ -463,7 +496,6 @@ async function handleLogoSelected(event) {
   if (!file) {
     if (state.logoBitmap && typeof state.logoBitmap.close === "function") state.logoBitmap.close();
     state.logoBitmap = null;
-    state.logoName = "";
     el.logoName.textContent = "未选择";
     queuePreview();
     return;
@@ -471,7 +503,6 @@ async function handleLogoSelected(event) {
 
   if (state.logoBitmap && typeof state.logoBitmap.close === "function") state.logoBitmap.close();
   state.logoBitmap = await fileToBitmap(file);
-  state.logoName = file.name;
   el.logoName.textContent = file.name;
   queuePreview();
 }
@@ -480,22 +511,11 @@ async function handleLogoSelected(event) {
   el.watermarkText,
   el.opacityRange,
   el.fontScaleRange,
-  el.offsetX,
-  el.offsetY,
   el.logoOpacityRange,
   el.logoScaleRange,
-  el.namingMode,
-  el.namePrefix,
 ].forEach((node) => {
   node.addEventListener("input", () => {
     updateValueLabels();
-    queuePreview();
-  });
-});
-
-el.presetButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    applyPreset(button.dataset.preset);
     queuePreview();
   });
 });
@@ -508,20 +528,24 @@ el.logoInput.addEventListener("change", (event) => {
   void handleLogoSelected(event);
 });
 
+el.textColorPicker.addEventListener("click", (event) => {
+  const chip = event.target.closest(".color-chip");
+  if (!chip) return;
+  setTextColor(chip.dataset.color);
+  queuePreview();
+});
+
 el.previewBtn.addEventListener("click", () => {
   void renderSelectedPreview();
 });
 
 el.togglePreviewBtn.addEventListener("click", togglePreviewStage);
-
-el.downloadCurrentBtn.addEventListener("click", () => {
-  void downloadCurrent();
-});
-
-el.downloadAllBtn.addEventListener("click", () => {
-  void downloadAllZip();
-});
-
+el.downloadCurrentBtn.addEventListener("click", () => { void downloadCurrent(); });
+el.downloadAllBtn.addEventListener("click", () => { void generateBatchResults(); });
+el.downloadSheetAllBtn.addEventListener("click", downloadAllBatchFiles);
+el.shareSheetAllBtn.addEventListener("click", () => { void shareAllBatchFiles(); });
+el.closeSheetBtn.addEventListener("click", closeSheet);
+el.sheetBackdrop.addEventListener("click", closeSheet);
 el.resetBtn.addEventListener("click", resetControls);
 
 resetControls();
